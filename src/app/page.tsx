@@ -1,12 +1,17 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useTheme } from '@/hooks/useTheme';
+import { supabase } from '@/lib/supabase';
+import { validateWaitlistForm } from '@/utils/mailValidation';
 
 export default function Home() {
   const { theme, toggleTheme } = useTheme();
+  const [formData, setFormData] = useState({ name: '', email: '' });
+  const [isLoading, setIsLoading] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const heroSceneRef = useRef<HTMLElement | null>(null);
   const heroGlowRef = useRef<HTMLDivElement | null>(null);
   const heroIconRef = useRef<HTMLSpanElement | null>(null);
@@ -14,6 +19,55 @@ export default function Home() {
   const heroLeftRef = useRef<HTMLDivElement | null>(null);
   const featuresRef = useRef<HTMLDivElement | null>(null);
   const ctaSectionRef = useRef<HTMLElement | null>(null);
+
+  const handleWaitlistSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    
+    // Validate and sanitize input
+    const validationResult = validateWaitlistForm(formData);
+    
+    if (!validationResult.isValid) {
+      const firstError = validationResult.errors.name || validationResult.errors.email;
+      setMessage({ type: 'error', text: firstError || 'Data tidak valid' });
+      return;
+    }
+
+    if (!validationResult.sanitizedData) {
+      setMessage({ type: 'error', text: 'Data tidak valid' });
+      return;
+    }
+
+    setIsLoading(true);
+    setMessage(null);
+
+    try {
+      const { error } = await supabase
+        .from('waitlist')
+        .insert([
+          {
+            name: validationResult.sanitizedData.name,
+            email: validationResult.sanitizedData.email,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+
+      if (error) {
+        // Handle duplicate email error
+        if (error.code === '23505') {
+          setMessage({ type: 'error', text: 'Email sudah terdaftar di waiting list' });
+        } else {
+          setMessage({ type: 'error', text: 'Gagal mendaftar. Silakan coba lagi.' });
+        }
+      } else {
+        setMessage({ type: 'success', text: 'Terima kasih! Anda telah ditambahkan ke waiting list.' });
+        setFormData({ name: '', email: '' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Terjadi kesalahan. Silakan coba lagi.' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -321,23 +375,46 @@ export default function Home() {
             <p className="text-lg text-text-secondary-light dark:text-text-secondary-dark mb-8">
               Daftarkan email Anda dan dapatkan <span className="font-bold text-white bg-accent px-3 py-1.5 rounded-lg shadow-lg">2 bulan premium gratis</span> saat kami launching!
             </p>
-            <form className="max-w-md mx-auto space-y-4">
+            <form className="max-w-md mx-auto space-y-4" onSubmit={handleWaitlistSubmit}>
               <input
                 type="text"
                 placeholder="Nama"
-                className="w-full px-5 py-3.5 rounded-xl border-2 border-border-light dark:border-border-dark bg-white dark:bg-surface-dark text-text-primary-light dark:text-text-primary-dark placeholder:text-text-secondary-light/60 dark:placeholder:text-text-secondary-dark/60 focus:outline-none focus:border-primary transition-colors text-base"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                disabled={isLoading}
+                maxLength={100}
+                required
+                className="w-full px-5 py-3.5 rounded-xl border-2 border-border-light dark:border-border-dark bg-white dark:bg-surface-dark text-text-primary-light dark:text-text-primary-dark placeholder:text-text-secondary-light/60 dark:placeholder:text-text-secondary-dark/60 focus:outline-none focus:border-primary transition-colors text-base disabled:opacity-50"
               />
               <input
                 type="email"
                 placeholder="Email"
-                className="w-full px-5 py-3.5 rounded-xl border-2 border-border-light dark:border-border-dark bg-white dark:bg-surface-dark text-text-primary-light dark:text-text-primary-dark placeholder:text-text-secondary-light/60 dark:placeholder:text-text-secondary-dark/60 focus:outline-none focus:border-primary transition-colors text-base"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                disabled={isLoading}
+                maxLength={254}
+                required
+                className="w-full px-5 py-3.5 rounded-xl border-2 border-border-light dark:border-border-dark bg-white dark:bg-surface-dark text-text-primary-light dark:text-text-primary-dark placeholder:text-text-secondary-light/60 dark:placeholder:text-text-secondary-dark/60 focus:outline-none focus:border-primary transition-colors text-base disabled:opacity-50"
               />
               <button
                 type="submit"
-                className="w-full px-6 py-3.5 bg-primary hover:bg-primary-dark text-white rounded-xl font-semibold text-base shadow-lg hover:shadow-xl transition-all"
+                disabled={isLoading}
+                className="w-full px-6 py-3.5 bg-primary hover:bg-primary-dark text-white rounded-xl font-semibold text-base shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Daftar Sekarang
+                {isLoading ? 'Mendaftar...' : 'Daftar Sekarang'}
               </button>
+              
+              {message && (
+                <div
+                  className={`px-4 py-3 rounded-lg text-sm font-medium ${
+                    message.type === 'success'
+                      ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-300 dark:border-green-700'
+                      : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-300 dark:border-red-700'
+                  }`}
+                >
+                  {message.text}
+                </div>
+              )}
             </form>
             <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
               <p className="text-base font-medium text-text-secondary-light dark:text-text-secondary-dark">
